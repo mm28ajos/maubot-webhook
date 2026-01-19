@@ -1,10 +1,39 @@
-path: "/send"
-method: "POST"
+# ===== original options =====
+path: /send
+method: POST
+
 room: "!AAAAAAAAAAAAAAAAAA:example.com"
-message: "Hello world!"
-message_format: "plaintext"
-message_type: "m.text"
-auth_type:
-auth_token:
+message: "{{ body }}"
+message_format: plaintext     # plaintext | markdown | html
+message_type: m.text          # m.text | m.notice
+
+auth_type: ""                 # "" | Basic | Bearer
+auth_token: ""                # for Basic: user:pass  | for Bearer: token
+
 force_json: false
 ignore_empty_messages: false
+
+# ===== image extension =====
+# Second endpoint for image uploads.
+# Will be registered at: /_matrix/maubot/plugin/<instance_id>/<image_path>
+image_path: /send-image
+image_method: POST
+
+# How /send-image reads the target room:
+# - First tries multipart field "room"
+# - Else tries JSON field "room" (if force_json / application/json)
+# - Else falls back to this config value.
+image_room: "{{ json.room if json is defined and json.room is defined else '' }}"
+
+# Optional caption/body for the image message (supports Jinja2)
+# If empty, defaults to filename.
+image_caption: "{{ json.caption if json is defined and json.caption is defined else '' }}"
+image_caption_format: plaintext   # plaintext | markdown | html
+
+# Upload limits (bytes)
+max_upload_bytes: 5242880         # 5 MiB
+
+# Accept JSON base64 mode in addition to multipart?
+# If enabled, /send-image can accept JSON:
+# { "room": "...", "base64": "...", "mimetype":"image/jpeg", "filename":"snap.jpg", "caption":"..." }
+enable_base64_json: true

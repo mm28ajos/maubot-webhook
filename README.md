@@ -1,182 +1,182 @@
 # maubot-webhook
 A [maubot](https://github.com/maubot/maubot) plugin to send messages using webhooks.
 
-
+This fork adds **encrypted (E2EE-safe) media uploads** and additional endpoints for images and general media.
 
 ## Features
-- Jinja2 templating
-- JSON support
-- HTTP Basic and Token Bearer authorization
-
-
+- Jinja2 templating (StrictUndefined)
+- JSON support (optional forced JSON parsing)
+- HTTP Basic and Bearer token authorization
+- **Text endpoint**: POST /send
+- **Image endpoint**: POST /send-image (encrypted Matrix attachments, optional encrypted thumbnail)
+- **Media endpoint**: POST /send-media (image/video/file; encrypted attachments, optional thumbnails for images and videos)
+- Best-effort optional dependencies:
+  - Pillow for image thumbnails (tries to install via pip if missing)
+  - ffmpeg for video thumbnails (tries to install via apk if missing)
 
 ## Installation
-Either download an `.mbp` file from the [release assets](https://github.com/jkhsjdhjs/maubot-webhook/releases) or [build one yourself](#building).
-Then, [upload](https://docs.mau.fi/maubot/usage/basic.html#uploading-plugins) it to your maubot instance.
+Either download an `.mbp` file from the release assets (if available) or build one yourself.
+Then upload it to your maubot instance.
 
-Furthermore, this plugin requires Jinja2 for template rendering. However, since maubot already depends on Jinja2, you shouldn't have to install it manually.
-
-
+This plugin uses Jinja2 for template rendering. Since maubot already depends on Jinja2, you usually don’t need to install it manually.
 
 ## Usage
-Create a new instance in the maubot management interface and select `me.jkhsjdhjs.maubot.webhook` as `Type`.
-The client selected as `Primary user` will be used to send the messages.
+Create a new instance in the maubot management interface and select
+`me.jkhsjdhjs.maubot.webhook` as Type.
 
-Each instance of this plugin provides a single webhook.
-To create multiple webhooks, just instantiate this plugin multiple times.
+The client selected as Primary user will be used to send messages.
 
+Each instance of this plugin provides these endpoints:
 
+- POST /send (text)
+- POST /send-image (image)
+- POST /send-media (general media)
 
-## Example
+They are available under:
+
+https://your.maubot.instance/_matrix/maubot/plugin/\<instance_id\>/\<endpoint\>
+
+To create multiple webhooks, instantiate this plugin multiple times.
+
+## Example (text /send)
+
+Example configuration:
 ```yaml
-path: /send
-method: POST
-room: '!AAAAAAAAAAAAAAAAAA:example.com'
-message: |
-    **{{ json.title }}**
-    {% for text in json.list %}
-    - {{ text }}
-    {% endfor %}
-message_format: markdown
-message_type: m.text
-auth_type: Basic
-auth_token: abc:123
-force_json: false
-ignore_empty_messages: false
+room: "!AAAAAAAAAAAAAAAAAA:example.com"  
+message: |  
+  **{{ json.title }}**  
+  {% for text in json.list %}  
+  - {{ text }}  
+  {% endfor %}  
+message_format: markdown  
+message_type: m.text  
+auth_type: Bearer  
+auth_token: supersecrettoken  
+force_json: false  
+ignore_empty_messages: false  
 ```
-
+Example request:
 ```bash
-$ curl -X POST -H "Content-Type: application/json" -u abc:123 https://your.maubot.instance/_matrix/maubot/plugin/<instance ID>/send -d '
-{
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer \<token\>" \
+  "https://your.maubot.instance/_matrix/maubot/plugin/\<instance_id\>/send" \
+  -d '{
     "title": "This is a test message:",
-    "list": [
-        "Hello",
-        "World!"
-    ]
-}'
+    "list": ["Hello", "World!"]
+  }'
 ```
+## Configuration (text)
 
-![Screenshot of the resulting message](https://screens.totally.rip/2023/02/63e0f862ca140.png)
+- room: target room ID (templated)
+- message: message template (templated)
+- message_format: plaintext | markdown | html
+- message_type: m.text | m.notice
+- auth_type: "" | Basic | Bearer
+- auth_token:
+  - Basic: \<username\>:\<password\>
+  - Bearer: \<token\>
+- force_json: true | false
+- ignore_empty_messages: true | false
 
+## Image endpoint: /send-image
 
+Uploads an image to the Matrix media repository and sends an m.image message.
+Uploads are sent as encrypted Matrix attachments (E2EE-safe).
 
-## Configuration
-This plugin has the following settings you can configure:
+Relevant configuration:
+- image_room: fallback room template
+- image_caption: fallback caption template
+- image_caption_format: plaintext | markdown | html
+- max_upload_bytes: upload limit in bytes
+- enable_base64_json: true | false
 
+Multipart request fields:
+- room (required unless image_room is set)
+- file (required)
+- caption or message (optional)
+- mimetype (optional)
+- filename (optional)
 
-### `path`
-The path the webhook will be available at.
-It must start with a `/` or be empty.
-It is relative to the webapp base URL of the instance:
+Example:
+```bash
+curl -X POST \
+  -H "Authorization: Bearer \<token\>" \
+  -F "room=!roomid:server" \
+  -F "caption=Snapshot" \
+  -F "file=@snapshot.jpg;type=image/jpeg" \
+  "https://your.maubot.instance/_matrix/maubot/plugin/\<instance_id\>/send-image"
 ```
-https://your.maubot.instance/_matrix/maubot/plugin/<instance ID>/<path>
+JSON base64 mode example:
+```yaml
+{
+  "room": "!roomid:server",
+  "caption": "Snapshot",
+  "filename": "snapshot.jpg",
+  "mimetype": "image/jpeg",
+  "base64": "\<base64 bytes\>"
+}
 ```
+## Media endpoint: /send-media
 
-The URL under which the webhook is made available is logged on instance startup, so if you're unsure, you can check the logs.
+General media endpoint for images, videos, and files.
+Sends m.image, m.video, or m.file depending on mimetype.
+Uploads are encrypted Matrix attachments (E2EE-safe).
 
-The path supports variable resources, which can be used to extract information from the request URL to format the [`room`](#room) and the [`message`](#message).
-Further information on this can be found in [the formatting section](#formatting).
+Uses the same configuration as /send-image.
 
+Multipart fields:
+- room
+- file
+- caption or message
+- mimetype
+- filename
 
-### `method`
-Specifies the HTTP method that can be used on the given path.
-Should be one of `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS` or `*` for any method.
-This setting is case-insensitive.
+Example (video):
+```bash
+curl -X POST \
+  -H "Authorization: Bearer \<token\>" \
+  -F "room=!roomid:server" \
+  -F "caption=Clip" \
+  -F "file=@clip.mp4;type=video/mp4" \
+  "https://your.maubot.instance/_matrix/maubot/plugin/\<instance_id\>/send-media"
+```
+## Thumbnails
+- Images: generated using Pillow (optional)
+- Videos: generated using ffmpeg (optional)
 
-See also: https://docs.aiohttp.org/en/stable/web_reference.html?highlight=add_route#aiohttp.web.UrlDispatcher.add_route
+If unavailable, uploads still succeed without thumbnails.
 
-
-### `room`
-The room the message shall be sent to when the webhook is triggered.
-Supports formatting [as defined below](#formatting).
-
-
-### `message`
-The message that is sent when the webhook is triggered.
-Supports formatting [as defined below](#formatting).
-
-
-### `message_format`
-The format the message is interpreted as. Must be one of:
-- `plaintext` (default)
-- `markdown`
-- `html`
-
-
-### `message_type`
-The type the message is sent as.
-Supports formatting [as defined below](#formatting), but must evaluate to one of:
-- `m.text` (default)
-- `m.notice`
-
-
-### `auth_type`
-This can be used to protect a webhook against unauthorized access.
-Can be one of `Basic` for HTTP basic auth with username and password or `Bearer` for bearer token auth.
-Leave empty to disable authorization.
-The username/password or token is specified via the [`auth_token`](#auth_token) option.
-
-
-### `auth_token`
-This specifies the username/password or token for authorization, depending on [`auth_type`](#auth_type).
-If `auth_type` is `Basic`, this must be the username and password, separated by a colon (\<username\>:\<password\>).
-If `auth_type` is `Bearer`, this is the token used for token bearer authorization, so requests must carry an `Authorization: Bearer <token>` header.
-
-
-### `force_json`
-This setting takes a boolean and specifies whether the request body should be interpreted and parsed as json, even if the content type says otherwise.
-
-
-### `ignore_empty_messages`
-This setting takes a boolean and specifies whether a message should be sent if the message is empty. If `false` (the default) a message will be send for every
-successful message consumed by the webhook. If `true` if the template generates an empty message, no message is sent to the matrix client.  
-
-
+Note: Increase max_upload_bytes when sending videos.
 
 ## Formatting
-The `room` and `message` options can be formatted with Jinja2 using values from the path, the query string and the request body.
-Values extracted from the path are available via the `path` variable.
-Similarly, query parameters are available via the `query` variable.
-The request body in plain text is available as `body`.
+The room, message, image_room, and image_caption options support Jinja2 templates.
 
-If a request with content-type `application/json` is received (or if [`force_json`](#force_json) is enabled), the request body will be parsed as such and made available via the `json` variable.
+Available variables:
+- path: URL path parameters
+- query: query parameters
+- headers: request headers
+- body: raw request body
+- json: parsed JSON body (if applicable)
 
-For more information on Jinja2 templates please refer to https://jinja.palletsprojects.com/en/3.1.x/templates/.  
-For more information on URL path templates in aiohttp, see https://docs.aiohttp.org/en/stable/web_quickstart.html#variable-resources.
+## Escaping
+HTML escaping is enabled automatically.
+To disable escaping for a value, use the safe filter:
 
+{{ foo | safe }}
 
-### Escaping
-HTML-escaping is performed on all values automatically.
-To prevent a value from being escaped, use the `safe` filter: `{{ foo | safe }}`
+Markdown is NOT auto-escaped. Use:
 
-Refer to the Jinja2 docs for more information on autoescaping: https://jinja.palletsprojects.com/en/stable/templates/#working-with-automatic-escaping
-
-> [!WARNING]
-> While HTML is escaped automatically, markdown is not. It needs to be escaped manually via the `escape_md` filter: `{{ foo | escape_md }}`
->
-> This behavior will eventually change when Jinja2 allows custom autoescape functions (see [#13](https://github.com/jkhsjdhjs/maubot-webhook/issues/13) for more information).
-
-
+{{ foo | escape_md }}
 
 ## Building
-Use the `mbc` tool to build this plugin:
-```
+```bash
 mbc build
-```
-
-Optionally use the `-u` switch to upload it to your maubot instance, if configured:
-```
 mbc build -u
 ```
-
-Since `.mbp` files are just zip archives with a different name, you can also just zip the files of this repository:
-```
+Alternatively, zip the repository:
+```bash
 zip -9r webhook.mbp *
 ```
-
-
-
 ## License
-<img align="right" src="https://www.gnu.org/graphics/agplv3-155x51.png"/>
-
-This project is licensed under the GNU Affero General Public License v3.0, see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0
