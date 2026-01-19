@@ -22,7 +22,7 @@ This plugin uses Jinja2 for template rendering. Since maubot already depends on 
 
 ## Usage
 Create a new instance in the maubot management interface and select
-`me.jkhsjdhjs.maubot.webhook` as Type.
+`me.mm28ajos.maubot.webhook` as Type.
 
 The client selected as Primary user will be used to send messages.
 
